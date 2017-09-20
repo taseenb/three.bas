@@ -7,22 +7,56 @@ function init() {
     fov: 60
   });
   root.renderer.setClearColor(0x222222);
+  root.renderer.shadowMap.enabled = true;
   root.camera.position.set(0, 0, 175);
 
   var light = new THREE.DirectionalLight();
   root.add(light);
 
-  light = new THREE.DirectionalLight();
+  light = new THREE.DirectionalLight('#FFFFFF', 1);
+  light.castShadow = true
   light.position.y = -1;
   root.add(light);
 
+  var dirLight = new THREE.DirectionalLight(0xffffff, 1);
+  dirLight.name = 'Dir. Light';
+  dirLight.position.set(0, 200, 0);
+  dirLight.castShadow = true;
+  dirLight.shadow.camera.near = 0;
+  dirLight.shadow.camera.far = 400;
+  dirLight.shadow.camera.right = 200;
+  dirLight.shadow.camera.left = -200;
+  dirLight.shadow.camera.top = 200;
+  dirLight.shadow.camera.bottom = -200;
+  dirLight.shadow.mapSize.width = 2048;
+  dirLight.shadow.mapSize.height = 2048;
+  root.scene.add(dirLight);
+  root.scene.add(new THREE.CameraHelper(dirLight.shadow.camera));
+
+  var spotLight = new THREE.SpotLight( 0xffffff );
+  spotLight.name = 'Spot Light';
+  spotLight.angle = Math.PI / 5;
+  spotLight.penumbra = 0.3;
+  spotLight.position.set( 100, 100, 50 );
+  spotLight.castShadow = true;
+  spotLight.shadow.camera.near = 1;
+  spotLight.shadow.camera.far = 300;
+  spotLight.shadow.mapSize.width = 2048;
+  spotLight.shadow.mapSize.height = 2048;
+  root.scene.add( spotLight );
+  root.scene.add( new THREE.CameraHelper( spotLight.shadow.camera ) );
+
   var backgroundBox = new THREE.Mesh(
     new THREE.BoxGeometry(400, 400, 400, 10, 10, 10),
-    new THREE.MeshBasicMaterial({
-      color: 0xff00ff,
-      wireframe: true
+    new THREE.MeshPhongMaterial({
+      // color: 0xff00ff,
+      // wireframe: true
+      color: 0xa0adaf,
+      side: THREE.BackSide
     })
   );
+  backgroundBox.castShadow = false;
+  backgroundBox.receiveShadow = true;
   root.add(backgroundBox);
 
   var orientationBox = new THREE.Mesh(
@@ -31,6 +65,8 @@ function init() {
       color: 0x00ffff
     })
   );
+  orientationBox.castShadow = true;
+  orientationBox.receiveShadow = true;
   orientationBox.position.z = -100;
   root.scene.add(orientationBox);
 
@@ -112,11 +148,15 @@ function Animation(envMap) {
   }
 
   var material = new BAS.StandardAnimationMaterial({
+    flatShading: true,
     transparent: true,
     uniforms: {
       uTime: {value: 0},
       uBezierCurve: {value: new THREE.Vector4(.42,0,.58,1)},
       uMap2: {value: null}
+    },
+    defines: {
+      SIZE: 1
     },
     uniformValues: {
       map: new THREE.TextureLoader().load('../_tex/UV_Grid.jpg'),
@@ -157,13 +197,15 @@ function Animation(envMap) {
     // this chunk gets injected after <beginnormal_vertex> (before any other normal calculations)
     // objectNormal (transformed normal) is used throughout the vertex shader
     vertexNormal: [
-      'objectNormal = rotateVector(tQuat, objectNormal);'
+      // 'objectNormal = rotateVector(tQuat, objectNormal);'
     ],
     // this chunk gets injected after <begin_vertex> (before any other normal calculations)
     // transformed (transformed position) is used throughout the vertex shader
     vertexPosition: [
       'transformed = rotateVector(tQuat, transformed);',
-      'transformed += mix(aStartPosition, aEndPosition, tProgress);'
+      'transformed += mix(aStartPosition, aEndPosition, tProgress);',
+
+      'objectNormal = rotateVector(tQuat, objectNormal);' // << ERROR: UNDECLARED IDENTIFIER HERE
     ],
     // this chunk gets injected after vertexPosition
     vertexColor: [
@@ -221,6 +263,13 @@ function Animation(envMap) {
   THREE.Mesh.call(this, geometry, material);
 
   this.frustumCulled = false;
+  this.castShadow = true;
+  this.receiveShadow = true;
+
+  // depth material is used for directional & spot light shadows
+  this.customDepthMaterial = BAS.Utils.createDepthAnimationMaterial(material);
+  // distance material is used for point light shadows
+  this.customDistanceMaterial = BAS.Utils.createDistanceAnimationMaterial(material);
 }
 Animation.prototype = Object.create(THREE.Mesh.prototype);
 Animation.prototype.constructor = Animation;
@@ -230,6 +279,8 @@ Object.defineProperty(Animation.prototype, 'time', {
   },
   set: function (v) {
     this.material.uniforms['uTime'].value = v;
+    this.customDepthMaterial.uniforms['uTime'].value = v;
+    this.customDistanceMaterial.uniforms['uTime'].value = v;
   }
 });
 
